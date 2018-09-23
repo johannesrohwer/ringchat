@@ -21,7 +21,7 @@ message Token {
 }
 
 message Node {
-    string name = 1;
+    string hostname = 1;
     int32 port = 2;
 }
 

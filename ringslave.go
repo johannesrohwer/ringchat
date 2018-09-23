@@ -18,12 +18,13 @@ type RingSlaveServer struct {
 
 func NewRingSlaveServer(selfHost string, selfPort int) *RingSlaveServer {
 	id := uuid.New().String()
-	self := &rc.Node{Name: selfHost, Port: int32(selfPort)}
+	self := &rc.Node{Hostname: selfHost, Port: int32(selfPort)}
 	rss := RingSlaveServer{self: self, ID: id}
 	return &rss
 }
 
 func (rss *RingSlaveServer) Broadcast(message string) {
+	// Broadcasts a message to all nodes
 	token := &rc.Token{Message: message, Id: rss.ID, Payload: "reserved"}
 	rss.ForwardWithoutCheck(context.Background(), token)
 }
@@ -31,7 +32,7 @@ func (rss *RingSlaveServer) Broadcast(message string) {
 func (rss *RingSlaveServer) Forward(ctx context.Context, token *rc.Token) (*rc.Empty, error) {
 	// If message was sent by this node, ignore it
 	if token.Id == rss.ID {
-		log.Printf("[%s] destroy token with message %s\n", token.Id, token.Message)
+		log.Printf("[%s]\t[DEBUG] destroy token with message %s\n", token.Id, token.Message)
 		return &rc.Empty{}, nil
 	}
 
@@ -39,9 +40,10 @@ func (rss *RingSlaveServer) Forward(ctx context.Context, token *rc.Token) (*rc.E
 }
 
 func (rss *RingSlaveServer) ForwardWithoutCheck(ctx context.Context, token *rc.Token) (*rc.Empty, error) {
+	// Print message to stdout for the user
 	log.Printf("[%s]\t%s", token.Id, token.Message)
 
-	conn := dial(rss.next.Name, int(rss.next.Port))
+	conn := dial(rss.next.Hostname, int(rss.next.Port))
 	defer conn.Close()
 	client := rc.NewRingSlaveClient(conn)
 	_, err := client.Forward(context.Background(), token)

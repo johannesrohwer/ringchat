@@ -38,7 +38,7 @@ func (rms *RingMasterServer) AddToRing(ctx context.Context, node *rc.Node) (*rc.
 }
 
 func setNext(node *rc.Node, next *rc.Node) error {
-	conn := dial(node.Name, int(node.Port))
+	conn := dial(node.Hostname, int(node.Port))
 	defer conn.Close()
 
 	client := rc.NewRingSlaveClient(conn)
