@@ -1,12 +1,27 @@
 syntax = "proto3";
-service Ringchat {
-    rpc Ping (EchoRequest) returns (EchoResponse) {}
+
+service RingMaster {
+    rpc AddToRing(Node) returns (Node) {}
 }
 
-message EchoRequest {
-    string message = 1;
+service RingSlave {
+    rpc SetNext(Node) returns (Empty) {}
+    rpc Forward(Token) returns (Empty) {}
 }
 
-message EchoResponse {
-    string message = 1;
+
+message Empty {
+    // Explicit null type
 }
+
+message Token {
+    string id = 1;
+    string message = 2;
+    string payload = 3;
+}
+
+message Node {
+    string name = 1;
+    int32 port = 2;
+}
+

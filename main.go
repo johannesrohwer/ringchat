@@ -2,86 +2,92 @@ package main
 
 import "fmt"
 import (
-	"context"
+	"bufio"
+	"flag"
 	rc "github.com/johannesrohwer/ringchat/grpc/ringchat"
 	"google.golang.org/grpc"
 	"log"
 	"net"
+	"os"
+	"time"
 )
 
-func printHelp() {
-	fmt.Println("Help")
-	fmt.Println("!q \t quit")
-	fmt.Println("!c \t connect")
-	fmt.Println("!p \t ping")
-}
-
-func startServer(port int) {
+func startRingMaster(masterPort int) {
 	// Start listening
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", masterPort))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	log.Printf("listening on port %d\n", port)
+	log.Printf("ring master listening on port %d\n", masterPort)
 
 	// Create a gRPC server object
 	grpcServer := grpc.NewServer()
-	rs := RingchatServer{}
-	rc.RegisterRingchatServer(grpcServer, &rs)
+	rms := RingMasterServer{}
+	rc.RegisterRingMasterServer(grpcServer, &rms)
 
 	if err := grpcServer.Serve(listener); err != nil {
-		log.Fatalf("failed to serve: %s", err)
+		log.Fatalf("ring master failed to serve: %s", err)
 	}
 }
 
-func connect(host string, port int) (*rc.RingchatClient, *grpc.ClientConn) {
-	// FIXME: Conn needs to be close manually
-
-	// Establish connection to server
-	target := fmt.Sprintf("%s:%d", host, port)
-	conn, err := grpc.Dial(target, grpc.WithInsecure())
+func startRingSlave(masterHost string, masterPort int, returnCh chan *RingSlaveServer) {
+	// Start listening
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", 0))
 	if err != nil {
-		log.Fatalf("could not connect: %s", err)
+		log.Fatalf("failed to listen: %v", err)
 	}
 
-	client := rc.NewRingchatClient(conn)
-	return &client, conn
-}
+	grpcServer := grpc.NewServer()
+	selfHost := "" // FIXME: add current IP / hostname
+	selfPort := listener.Addr().(*net.TCPAddr).Port
+	rss := NewRingSlaveServer(selfHost, selfPort)
+	rc.RegisterRingSlaveServer(grpcServer, rss)
 
-func ping(client *rc.RingchatClient) {
-	response, err := (*client).Ping(context.Background(), &rc.EchoRequest{Message: "hi! :)"})
-	if err != nil {
-		log.Fatalf("Error when calling Ping: %s", err)
-	}
-	log.Printf("Response from server: %s", response.Message)
+	// FIXME: Add error handling
+	go grpcServer.Serve(listener)
 
+	rss.JoinRing(masterHost, masterPort)
+	returnCh <- rss
 }
 
 func main() {
 	// Load parameters & constants
-	port := 7777
+	// FIXME: adjust description of parameters
+	masterBoolPtr := flag.Bool("master", false, "set to true if this is a master node")
+	masterPortIntPtr := flag.Int("master-port", 9999, "port of the master node")
+	masterHostStrPtr := flag.String("master-host", "", "host of the master node")
+	flag.Parse()
 
-	go startServer(port)
-	printHelp()
+	isMaster := *masterBoolPtr
+	masterPort := *masterPortIntPtr
+	masterHost := *masterHostStrPtr
 
-	var input = ""
-	var client *rc.RingchatClient
-	var conn *grpc.ClientConn
-inputLoop:
-	for {
-		switch input {
-		case "!q":
-			break inputLoop
-		case "!c":
-			client, conn = connect("", port)
-		case "!p":
-			ping(client)
-		}
-
-		fmt.Print("$ ")
-		fmt.Scanln(&input)
+	// Start master server if required
+	if isMaster {
+		go startRingMaster(masterPort)
 	}
 
-	conn.Close()
+	// FIXME: Do not just wait until its up but actually check
+	log.Printf("sleep 3 seconds...\n")
+	time.Sleep(3 * time.Second)
+
+	// Start ring slave
+	slaveCh := make(chan *RingSlaveServer, 1)
+	go startRingSlave(masterHost, masterPort, slaveCh)
+	rss := <-slaveCh
+
+	// Read and evaluate input
+	// FIXME: Refactor this into own method
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		input := scanner.Text()
+		if input == "!q" {
+			break
+		} else {
+			rss.Broadcast(input)
+		}
+
+	}
+
 }
